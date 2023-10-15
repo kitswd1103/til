@@ -739,3 +739,128 @@ fn main() {
     }; // Ok. value: 10
 }
 ```
+
+## 10章
+
+### 列挙型
+
+ヴァリアントをインポートすることが出来る。同じモジュールの場合はSelfインポートをする。
+
+```rust
+use std::cell::RefCell;
+
+enum Hoge {
+    Foo,
+    Bar,
+}
+
+use self::Hoge::Bar; // Barヴァリアントをインポート
+
+fn main() {
+    let _foo = Hoge::Foo;
+    let _bar = Bar;         // Barをインポートしているため Hoge:: を省略することができる
+}
+```
+
+Cスタイルの列挙型のように整数を割り当てることが可能。
+整数割り当てがない場合、先頭は0、それ以外は上の番号+1で割り振られる
+
+```rust
+enum Hoge {
+    Foo,        // 先頭で指定がないため0
+    Bar = 10,   // 10
+    Baz,        // 11
+}
+```
+
+Cスタイルの列挙型は整数型へのキャストは可能だが、整数型から列挙型への変換は自分でチェックする必要がある。
+
+```rust
+enum Hoge {
+    Foo = 10,
+    Bar,
+    Baz = 20,
+}
+
+impl Hoge {
+    fn from_u32(n: u32) -> Option<Hoge> {
+        match n {
+            10 => Some(Hoge::Foo),
+            11 => Some(Hoge::Bar),
+            20 => Some(Hoge::Baz),
+            _ => None,
+        }
+    }
+
+    fn to_string(self) -> String {
+        match self {
+            Hoge::Foo => "Foo".to_string(),
+            Hoge::Bar => "Bar".to_string(),
+            Hoge::Baz => "Baz".to_string(),
+        }
+    }
+
+    fn print(self) {
+        println!("hoge: {}", self.to_string());
+    }
+
+    fn print_to_u32(self) {
+        println!("hoge as u32: {}", self as u32);
+    }
+
+    fn print_from_u32(n: u32) {
+        match Self::from_u32(n) {
+            Some(hoge) => println!("{} to Hoge: {}", n, hoge.to_string()),
+            None => println!("{} convert failed.", n),
+        }
+    }
+}
+
+fn main() {
+    Hoge::Foo.print(); // hoge: Foo
+    Hoge::Bar.print(); // hoge: Bar
+    Hoge::Baz.print(); // hoge: Baz
+
+    Hoge::Foo.print_to_u32(); // hoge as u32: 10
+    Hoge::Bar.print_to_u32(); // hoge as u32: 11
+    Hoge::Baz.print_to_u32(); // hoge as u32: 20
+
+    Hoge::print_from_u32(10); // 10 to Hoge: Foo
+    Hoge::print_from_u32(11); // 11 to Hoge: Bar
+    Hoge::print_from_u32(20); // 20 to Hoge: Baz
+    Hoge::print_from_u32(1); // 1 convert failed.
+}
+```
+
+列挙型の変換については [enum_primitive](https://crates.io/crates/enum_primitive)クレートを使用することもできる。
+
+==演算子等はコンパイラが提供しているが、使用する場合は明示的に要求する必要がある。
+
+```rust
+#[derive(Copy, Clone, PartialEq)]
+enum Hoge {
+    Foo,
+}
+```
+
+列挙型はのヴァリアントは3種類ありデータを持たないもの、タプル型、構造体型ヴァリアントがある。
+
+```rust
+enum Hoge {
+    Foo,                // データなし
+    Bar(u32, u32),      // タプル型ヴァリアント
+    Baz { value: u32 }, // 構造体ヴァリアント
+}
+
+fn main() {
+    let _foo = Hoge::Foo;
+    let _bar = Hoge::Bar(0, 0);
+    let _baz = Hoge::Baz { value: 0 };
+}
+```
+
+列挙型はツリー構造を簡単に書くことが出来る。
+
+---
+
+他にも便利そうな機能があるため実際に使う場面で再度この章を読み返す。
