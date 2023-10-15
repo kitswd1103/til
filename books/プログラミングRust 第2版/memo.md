@@ -465,3 +465,277 @@ use self::hoge::hoge_func;
 
 `cargo doc` コマンドを使うことでドキュメントを作成することが出来る。
 ドキュメントは `///` から始まるコメントを書くことで書くことが出来る。ドキュメントの詳細はRustの[ドキュメント](https://doc.rust-lang.org/rustdoc/index.html)から確認することが出来る。
+
+## 9章
+
+### ユニット構造体
+
+```rust
+struct Hoge;
+```
+
+のように要素を宣言しにない構造体。
+
+### self
+
+self の型は明示的に書くことが出来る
+
+例:
+
+```rust
+use std::{rc::Rc, sync::Arc};
+
+struct Hoge;
+
+impl Hoge {
+    pub fn func(self: Rc<Self>) { }
+    pub fn func2(self: Arc<Self>) { }
+    pub fn func3(self: Box<Self>) { }
+}
+
+fn main() {
+    let rc_hoge = Rc::new(Hoge);
+    let arc_hoge = Arc::new(Hoge);
+    let box_hoge = Box::new(Hoge);
+    rc_hoge.func();
+    arc_hoge.func2();
+    box_hoge.func3();
+}
+```
+
+### 型関連定数
+
+```rust
+struct Hoge {
+    pub a: u32,
+}
+
+impl Hoge {
+    pub const ZERO: Hoge = Hoge { a: 0 };
+    pub const FUGA: u32 = 1;
+    pub const PIYO: &'static str = "PIYO";
+}
+
+fn main() {
+    println!("{}", Hoge::ZERO.a);
+    println!("{}", Hoge::FUGA);
+    println!("{}", Hoge::PIYO);
+}
+```
+
+### ジェネリック
+
+implの後ろにも型パラメータを書く必要がある。書かない場合は特定の型にのみ実装するようになる。
+
+```rust
+struct Hoge<T> {
+    pub a: T,
+}
+
+impl<T> Hoge<T> {
+    pub fn fuga(&self) { println!("fuga generic") }
+}
+
+impl Hoge<u32> {
+    pub fn piyo(&self) { println!("piyo u32") }
+}
+
+fn main() {
+    let hoge = Hoge { a: 10u8 };
+    let fuga = Hoge { a: 10u32 };
+
+    hoge.fuga();
+    // hoge.piyo(); // error piyo関数はHoge<u32>でない場合実装されない。
+
+    fuga.fuga();
+    fuga.piyo();    // fuga変数はHoge<u32>のためコンパイル可能
+}
+```
+
+### 定数パラメータ
+
+```rust
+struct Hoge<const N: usize> {
+    pub a: [u32; N],
+}
+impl<const N: usize> Hoge<N> {
+    pub fn new(arr: [u32; N]) -> Self {
+        Hoge {a: arr }
+    }
+}
+
+fn main() {
+    let hoge = Hoge::new([0; 10]);
+    let fuga = Hoge::new([0; 20]);
+
+    println!("{}", hoge.a.len());   // 10
+    println!("{}", fuga.a.len());   // 20
+}
+```
+
+複数のジェネリックパラメータを使用するときは生存期間、型パラメータ、定数パラメータの順番で書く。
+
+### 一般的トレイとの自動実装
+
+作成した構造体にCopyやClone、演算子動作の機能を追加するには #[derive] 属性を付与する。
+
+```rust
+#[derive(Copy, Clone, PartialEq)]
+struct Hoge{
+    pub a: u32,
+}
+```
+
+属性を付与することで自動実装されるが、構造体の全てのフィールドが付与するトレイトを実装する必要がある。
+
+### 内部可変性
+
+通常 Rc を使用した場合中身の書き換えができない。
+
+```rust
+use std::rc::Rc;
+
+struct Hoge {
+    pub a: u32,
+}
+
+struct Fuga {
+    hoge: Rc<Hoge>,
+}
+
+impl Hoge {
+    pub fn new() -> Self {
+        Hoge { a: 0 }
+    }
+}
+
+impl Fuga {
+    pub fn new() -> Self {
+        Fuga { hoge: Rc::new(Hoge::new()) }
+    }
+    pub fn add_hoge_a(&mut self, add_value: u32) {
+        self.hoge.a = self.hoge.a + add_value; // <- hogeがRcのため書き換えできない
+    }
+    pub fn print_hoge_a(&self) {
+        println!("hoge_a: {}", self.hoge.a)
+    }
+}
+
+fn main() {
+    let mut fuga = Fuga::new();
+    fuga.print_hoge_a();
+    fuga.add_hoge_a(10);
+    fuga.print_hoge_a();
+}
+```
+
+値を書き換えたい場合は Cell または RefCell を使用する。
+
+Cellを使用する場合は直接書き換えるのではなく set() を使用することで書き換えることが出来る。値をとる場合は get() を使用するが参照の取得はできないため、Cellの型パラメータには Copy トレイトが実装されている必要がある。
+
+Cell:
+
+```rust
+use std::{rc::Rc, cell::Cell};
+
+struct Hoge {
+    pub a: Cell<u32>,   // u32はCopyトレイトが実装されているためget()で値を取得可能
+}
+
+struct Fuga {
+    hoge: Rc<Hoge>,
+}
+
+impl Hoge {
+    pub fn new() -> Self {
+        Hoge { a: Cell::new(0) }
+    }
+}
+
+impl Fuga {
+    pub fn new() -> Self {
+        Fuga { hoge: Rc::new(Hoge::new()) }
+    }
+    pub fn add_hoge_a(&mut self, add_value: u32) {
+        self.hoge.a.set(self.hoge.a.get() + add_value);
+    }
+    pub fn print_hoge_a(&self) {
+        println!("hoge_a: {}", self.hoge.a.get())
+    }
+}
+
+fn main() {
+    let mut fuga = Fuga::new();
+    fuga.print_hoge_a();    // 0
+    fuga.add_hoge_a(10);
+    fuga.print_hoge_a();    // 10
+}
+```
+
+RefCellの場合は `brrow()`, `brrow_mut()` を使用することで参照、可変参照を取得することが出来る。ただし既に参照が借用されている場合はパニックを起こす。
+パニックを起こしたくない場合は `try_brrow()`, `try_brrow_mut()` を使用することでResult型として取得でき、既に借用されている場合はErrが帰ってくる
+
+RefCell:
+
+```rust
+use std::{rc::Rc, cell::RefCell};
+
+struct Hoge {
+    pub a: RefCell<u32>,
+}
+
+struct Fuga {
+    hoge: Rc<Hoge>,
+}
+
+impl Hoge {
+    pub fn new() -> Self {
+        Hoge { a: RefCell::new(0) }
+    }
+}
+
+impl Fuga {
+    pub fn new() -> Self {
+        Fuga { hoge: Rc::new(Hoge::new()) }
+    }
+    pub fn add_hoge_a(&mut self, add_value: u32) {
+        let mut a = self.hoge.a.borrow_mut();   // RefMut型が帰る
+        *a = *a + add_value;                    // RefMut型は通常の &mut と同じ制約のため * をつける
+    }
+    pub fn print_hoge_a(&self) {
+        println!("hoge_a: {}", self.hoge.a.borrow())
+    }
+}
+
+fn main() {
+    let mut fuga = Fuga::new();
+    fuga.print_hoge_a();    // 0
+    fuga.add_hoge_a(10);
+    fuga.print_hoge_a();    // 10
+
+}
+```
+
+```rust
+use std::cell::RefCell;
+
+fn main() {
+    let a = RefCell::new(0);
+
+    {
+        let mut b = a.borrow_mut();
+        *b = *b + 10;
+        // println!("{}", a.borrow());  // <= 既にaの借用を受けているためパニックを起こす
+        match a.try_borrow() {
+            Ok(value) => println!("Ok. value: {}", value),
+            Err(msg) => println!("Err. msg: {}", msg)       // < こちらが呼ばれる。
+        }; // Err. msg: already mutably borrowed
+    }
+
+    // ブロックを抜けたことで a を借用した b がドロップするため a の借用が再度可能になる
+    match a.try_borrow() {
+        Ok(value) => println!("Ok. value: {}", value),  // < こちらが呼ばれる。
+        Err(msg) => println!("Err. msg: {}", msg)
+    }; // Ok. value: 10
+}
+```
