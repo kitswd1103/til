@@ -864,3 +864,101 @@ fn main() {
 ---
 
 他にも便利そうな機能があるため実際に使う場面で再度この章を読み返す。
+
+## 11章
+
+### トレイトの衝突
+
+トレイトの名前の衝突は、同じ型に同じ名前でメソッドを定義しないと衝突しない。衝突が起きた場合は完全修飾メソッド記法を使用する。
+
+### トレイトオブジェクト
+
+トレイトオブジェクトは動的ディスパッチ、トレイト型の参照で、dyn キーワードを使用する。トレイト型はコンパイル時にサイズが決まらずコンパイルが出来ないため参照だと明示する必要がある。
+
+```rust
+struct Hoge;
+
+trait Fuga {
+    fn print(&self) { println!("Fuga trait for Hoge") }
+}
+
+impl Fuga for Hoge { 
+}
+
+fn main() {
+    let mut hoge = Hoge {};
+    //let mut fuga: dyn Fuga = hoge; // dyn Fuga型は型サイズがコンパイル時に定まらないためエラー
+    let fuga: &mut dyn Fuga = &mut hoge; // 参照型はコンパイル時にサイズが決まるためコンパイル可能
+    fuga.print();
+}
+```
+
+トレイトオブジェクトは通常の参照として使用することが出来るが、基本的に実際の型情報の取得やダウンキャストはできない。調べたらクレートを使用したらできるらしい。
+
+メモリ配置として仮想テーブルへのポインタは構造体が持たず、トレイトオブジェクトが所有する。そのため小さな構造体に大量のトレイトを実装しても構造体自体のメモリサイズは変わらない。
+
+c++で仮想関数を使用した構造体のサイズ出力コード(paiza.ioで実行):
+
+```c++
+#include <iostream>
+
+struct Foo {
+    void func() const { }
+};
+struct Hoge {
+    virtual void func() const { }
+};
+
+struct Fuga : public Hoge { };
+
+int main(void){
+    Foo foo;
+    std::cout << "Foo size: " << sizeof(foo) << std::endl;     // Foo size: 1
+    
+    Hoge hoge;
+    std::cout << "Hoge size: " << sizeof(hoge) << std::endl;   // Hoge size: 8
+    
+    Fuga fuga;
+    std::cout << "Fuga size: " << sizeof(fuga) << std::endl;   // Fuga size: 8
+}
+```
+
+普通の関数だけの構造体はサイズ1[^1]、仮想関数をもつ構造体はvtableを持つ為サイズ8となる。
+
+
+rustでトレイトオブジェクトを使用したコード
+
+```rust
+use std::mem;
+
+struct Foo;
+
+impl Foo {
+    fn _func() { }
+}
+
+struct Hoge;
+
+trait Fuga {
+    fn _func(&self) { }
+}
+
+impl Fuga for Hoge { }
+
+fn main() {
+    let foo = Foo {};
+    println!("foo size: {}", mem::size_of_val(&foo));   // foo size: 0
+    
+    let mut hoge = Hoge {};
+    println!("hoge size: {}", mem::size_of_val(&hoge)); // hoge size: 0
+    
+    let fuga: &mut dyn Fuga = &mut hoge;
+    println!("&mut dyn fuga size: {}", mem::size_of_val(&fuga)); // &mut dyn fuga size: 16
+    println!("fuga size: {}", mem::size_of_val(fuga)); // fuga size: 16
+}
+```
+
+implで実装したユニット構造体およびトレイトを実装したユニット構造体はサイズ0、トレイトオブジェクトはデータ構造体へのptr+vptrのサイズ16で構造体自体のサイズは0となる。[^2]
+
+[^1]: c++では空構造体はサイズ1らしい(もしかしたら環境依存かも)
+[^2]: 正直c++とrustのコードを書いたが、あまり自信がないため間違っているかもしれない。
