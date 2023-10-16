@@ -960,5 +960,33 @@ fn main() {
 
 implで実装したユニット構造体およびトレイトを実装したユニット構造体はサイズ0、トレイトオブジェクトはデータ構造体へのptr+vptrのサイズ16で構造体自体のサイズは0となる。[^2]
 
+通常の参照やBox,Rc等のポインタ型は必要に応じてトレイトオブジェクトに変換される。
+
+```rust
+use std::rc::Rc;
+
+struct Hoge;
+
+trait Fuga {
+    fn _func(&self) { }
+}
+
+impl Fuga for Hoge { }
+
+fn fuga_ref(_fuga: &dyn Fuga) { println!("fuga ref") }
+fn fuga_box(_fuga: Box<dyn Fuga>) { println!("fuga box") }
+fn fuga_rc(_fuga: Rc<dyn Fuga>) { println!("fuga rc") }
+
+fn main() {
+    let hoge = Hoge {};
+    let hoge_box = Box::new( Hoge{} );
+    let hoge_rc = Rc::new( Hoge{} );
+
+    fuga_ref(&hoge);    // fuga ref
+    fuga_box(hoge_box); // fuga box
+    fuga_rc(hoge_rc);   // fuga rc
+}
+```
+
 [^1]: c++では空構造体はサイズ1らしい(もしかしたら環境依存かも)
 [^2]: 正直c++とrustのコードを書いたが、あまり自信がないため間違っているかもしれない。
