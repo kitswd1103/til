@@ -925,7 +925,6 @@ int main(void){
 
 普通の関数だけの構造体はサイズ1[^1]、仮想関数をもつ構造体はvtableを持つ為サイズ8となる。
 
-
 rustでトレイトオブジェクトを使用したコード
 
 ```rust
@@ -990,3 +989,201 @@ fn main() {
 
 [^1]: c++では空構造体はサイズ1らしい(もしかしたら環境依存かも)
 [^2]: 正直c++とrustのコードを書いたが、あまり自信がないため間違っているかもしれない。
+
+### トレイトオブジェクトとジェネリック関数について
+
+複数の型が入り混じっているコレクションを使う場合はトレイトオブジェクトのほうが良い。ジェネリックを使ったコレクションの場合は一つのコレクションに対して一つの型しか作れない。またトレイトオブジェクトはジェネリックに比べコードサイズが少なくなるため制限がある場合は利用したほうがいい。
+
+```rust
+trait Hoge {
+    fn _func(&self) { }
+}
+
+struct Fuga;
+struct Piyo;
+
+impl Hoge for Fuga { }
+impl Hoge for Piyo { }
+
+struct Foo {
+    hoge_vec: Vec<Box<dyn Hoge>>,
+}
+
+struct Bar<T: Hoge> {
+    hoge_vec: Vec<T>
+}
+
+impl Foo {
+    pub fn add(&mut self, hoge: Box<dyn Hoge>) { self.hoge_vec.push(hoge) }
+}
+impl<T: Hoge> Bar<T> {
+    pub fn add(&mut self, hoge: T) { self.hoge_vec.push(hoge) }
+}
+
+fn main() {
+    let mut foo = Foo{ hoge_vec: Vec::default() };  // Hogeトレイトを実装したものならなんでも入る
+    foo.add(Box::new(Fuga{}));
+    foo.add(Box::new(Piyo{}));
+
+    let mut bar = Bar{ hoge_vec: Vec::<Fuga>::default() }; // Bar<Fuga>型で作成される
+    bar.add(Fuga{});
+    //bar.add(Piyo{});  // Bar::hoge_vecは Vec<Fuga> になるため Fuga型ではないPiyo型のものを入れることが出来ない
+}
+
+```
+
+ジェネリックの利点は、実行速度が早い、レイトオブジェクトで使用できないトレイトの機能が使用できる、型パラメータに対する制約を書くことが出来る。
+
+### 拡張トレイト
+
+既存の型やトレイトに対して実装するトレイトを拡張トレイトと呼ぶ。
+
+```rust
+use std::fmt::Binary;
+
+
+trait Hoge {
+    fn get_size(&self) -> usize { std::mem::size_of_val(self) }
+}
+
+impl Hoge for u32 { }  // u32型の拡張
+
+trait Fuga {
+    fn get_size2(&self) -> usize { std::mem::size_of_val(self)}
+}
+impl<T: Binary> Fuga for T { } // Binaryトレイトを実装しているものに対して拡張
+
+fn main() {
+    println!("{}", 10u32.get_size());   // 4
+    //println!("{}", 10u64.get_size()); // Hogeトレイトはu32の拡張トレイトしか実装していないためエラー
+    println!("{}", 10u32.get_size2());  // 4
+    println!("{}", 10u64.get_size2());  // 8
+    // u32やu64などBinaryトレイトを実装しているものはFugaトレイトの関数を呼び出せる
+}
+```
+
+### Self
+
+Self型を使う場合はトレイトオブジェクトを使用できない。
+
+### サブトレイト
+
+あるトレイトに対して他のトレイトの拡張として宣言する
+
+```rust
+trait Hoge {
+    fn get_zero(&self) -> u32 { 0 }
+}
+
+trait Fuga: Hoge { // Hogeの拡張としてFugaを作成
+    fn print_zero(&self) { println!("{}", self.get_zero() )}
+}
+
+struct Foo;
+
+impl Hoge for Foo {} // この行をコメントアウトするとしたの行でエラーを吐く
+impl Fuga for Foo {} // エラーの原因はFugaトレイトはHogeトレイトを実装しているものにしか実装できないため
+
+fn main() {
+    Foo.print_zero(); // 0
+}
+
+```
+
+### 型関連
+
+型関連はトレイトで型の関係を定義するもの。[^3]
+
+```rust
+trait Hoge {
+    type ReturnType;
+
+    fn get_value(&self) -> Self::ReturnType;
+}
+
+struct Fuga {
+    value: u32,
+}
+
+impl Hoge for Fuga {
+    type ReturnType = u32;
+
+    fn get_value(&self) -> Self::ReturnType {
+        self.value
+    }
+}
+
+fn main() {
+    let fuga = Fuga { value: 0 };
+    let x = fuga.get_value();
+
+    println!("{}", x)
+}
+```
+
+[^3]: ジェネリックとあまり違いが判らない。もう少し調査して必要に応じて使えるようにしておきたい。
+
+### impl trait
+
+impl traitは引数や戻り値に特定のトレイトを実装したものをだけを指定留守ことが出来る
+
+```rust
+trait Hoge { 
+    fn print_type(&self);
+}
+
+struct Foo;
+struct Bar;
+
+impl Hoge for Foo {
+    fn print_type(&self) {
+        println!("Foo")
+    }
+}
+impl Hoge for Bar {
+    fn print_type(&self) {
+        println!("Bar")
+    }
+}
+
+fn print_type(value: &impl Hoge) { value.print_type() } // 引数にHogeトレイトを指定
+//fn print_type<T: Hoge>(value: &T) { value.print_type() } // ジェネリックで書いた場合
+
+fn main() {
+    let foo = Foo {};
+    let bar = Bar {};
+
+    print_type(&foo); // Foo
+    print_type(&bar); // Bar
+}
+```
+
+また制限としてトレイトメソッドでは使用することができない。
+
+```rust
+trait Hoge { 
+}
+trait Fuga {
+    fn func(&self) -> impl Hoge; // トレイトメソッドでimpl trait を使っているためコンパイルエラー
+}
+```
+
+### トレイト関連定数
+
+トレイトでも定数を宣言することが出来る。構造体などとの違いはトレイト内で値を指定せず、実装時に値を指定することが出来る
+
+```rust
+trait Value { 
+    const VALUE: u32 = 10;
+}
+trait MaxValue {
+    const VALUE: Self; // 宣言だけ　
+}
+
+impl MaxValue for i32 {
+    const VALUE: i32 = i32::MAX;
+}
+impl MaxValue for i64 {
+    const VALUE: i64 = i64::MAX;
+}
+```
