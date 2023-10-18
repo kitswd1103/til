@@ -1187,3 +1187,42 @@ impl MaxValue for i64 {
     const VALUE: i64 = i64::MAX;
 }
 ```
+
+## 13章
+
+### Drop
+
+C++のデストラクタのようなもの。明示的に呼び出すことが出来ず、暗黙的に呼び出される。
+値が移動されるなどして未初期化状態になったものは呼び出されない。
+
+```rust
+struct Hoge {
+    name: String,
+}
+
+impl Hoge {
+struct Hoge {
+    name: String,
+}
+
+impl Hoge {
+    fn new(name: &str) -> Self {
+        println!("new {}", name);
+        Hoge { name: name.to_string() }
+    }
+}
+
+impl Drop for Hoge {
+    fn drop(&mut self) {
+        println!("Dropping {}", self.name)
+    }
+}
+
+fn main() {
+    let foo = Hoge::new("Foo"); // new Foo
+    {
+        let _foo2 = foo;
+    } // Dropping Foo
+    println!("end block");
+} // fooの変数がブロック内で移動し、未初期化状態になったためDropが呼び出されない
+```
