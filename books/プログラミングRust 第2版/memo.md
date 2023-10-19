@@ -1226,3 +1226,100 @@ fn main() {
     println!("end block");
 } // fooの変数がブロック内で移動し、未初期化状態になったためDropが呼び出されない
 ```
+
+Rust側でリソースを全て管理している場合はDropを使う必要がない。unsafeを使用して別言語で確保されたリソースを解放する必要がある場合に使用する。
+またDropを使用した場合はCopyトレイトが使用できなくなる。
+
+### FromとInto
+
+自明な型変換を行う。また変換は引数の所有権の移動が行われる。適切なFromが実装されていれば自動的に対応するIntoを実装してくれるため、引数が一つのコンストラクタを作るのなら `From<T>` の実装として作成するとよい。
+
+## 14章
+
+### キャプチャ
+
+クロージャの外側にある変数をクロージャ内で使用するとき、外側の変数の生存期間が、外側の使用するクロージャの生存期間を超えていなければ自動的に参照を借用する。
+
+外側の変数の生存期間が外側の使用するクロージャの生存期間を超えている場合は move を使用して変数の所有権を移動させる必要がある。ただし、移動すさせるものがコピー可能な場合はコピーとなる。
+
+### 関数型
+
+関数の型は `fn(argument_type) -> return_type` となる。c/c++の関数ポインタと同じよなもの。
+クロージャは型が違い個々のクロージャも固有の方になる。理由としては外部からの借用や移動が含まれるため。
+クロージャ型を引数にとる場合はFnトレイトを使用する
+
+```rust
+struct Hoge { message: String }
+
+impl Hoge {
+    fn new(message: &str) -> Self {
+        Hoge { message: message.to_string() }
+}
+    fn print(&self) { println!("{}", self.message) }
+}
+
+struct Fuga {
+    fuga: Box<dyn Fn()>
+}
+impl Fuga {
+    pub fn set_fuga<C: Fn() + 'static>(&mut self, fuga: C) {self.fuga = Box::new(fuga); }
+    pub fn call_fuga(&self) { (self.fuga)() }
+}
+
+fn main() {
+    let hoge = Hoge::new("hoge");
+    let foo = || { hoge.print() };
+    // 同一ブロックのため自動的に借用となる
+    foo(); // hoge
+    // 借用のため所有権は移動しない
+    hoge.print(); // hoge
+    
+    let mut fuga = Fuga {fuga: Box::new(|| {} ) };
+    {
+        let num = 0;
+        //fuga.set_fuga(|| { println!("{}", num); }); // クロージャで使用するstrの生存期間が短いためエラー
+        fuga.set_fuga(move || { println!("{}", num); });
+        // numの型がコピー可能なためクロージャ作成後でも使用できる。
+        println!("{}", num); // 0
+        
+        let str = "fuga".to_string();
+        fuga.set_fuga(move || { println!("{}", str); });
+        //println!("{}", str); // strの型がコピーできないため所有権が移動しエラー
+    }
+    fuga.call_fuga(); // fuga
+}
+```
+
+### FnOnce
+
+クロージャが所有する変数がクロージャ内でドロップする場合、クロージャの型は FnOnce になる。FnOnceは一度しか呼び出すことが出来ないため二度以上呼び出そうとするとエラーになる。
+
+```rust
+struct Hoge { message: String }
+
+impl Hoge {
+    fn new(message: &str) -> Self {
+        Hoge { message: message.to_string() }
+    }
+    // selfを借用ではなく、所有権を移動させる
+    fn print(self) { println!("{}", self.message) }
+}
+
+fn main() {
+    let hoge = Hoge::new("hoge");
+    let foo = move || { hoge.print() };
+    // hoge.print()の呼び出しでhogeが消費されるため foo は FnOnceになる
+
+    foo(); // hoge
+    //foo(); // fooが FnOnce になるためエラー
+}
+```
+
+### FnMut
+
+クロージャ内で外部リソースをドロップせず mut アクセスするものは FnMut になる。
+引数で受け取るときも Fn では受け取れず FnMut で受け取る必要がある。
+
+### コールバック
+
+Fn等はトレイトのため、構造体は直接所有することができない。そのためBoxを使用して所有する必要がある。コールバックを受け取る引数はジェネリックを使用し、制約として Fn + 'static を入れる必要がある。
