@@ -1323,3 +1323,264 @@ fn main() {
 ### コールバック
 
 Fn等はトレイトのため、構造体は直接所有することができない。そのためBoxを使用して所有する必要がある。コールバックを受け取る引数はジェネリックを使用し、制約として Fn + 'static を入れる必要がある。
+
+## 15章
+
+### IteratorとIntoIterator
+
+Iteratorはアイテムを生成する型で next() を使用することで Some(v) または None を返す。
+IntoIteratorはトレイトで実装した型のイテレータを返す機能。forはIntoIteratorやIteratorメソッドを使用した書き方を短く書いたものになる。
+
+```rust
+fn main() {
+    let range = (1..10).collect::<Vec<u32>>();
+    let mut sum = 0;
+    
+    for n in &range {
+        sum = sum + n
+    }
+    println!("{}", sum);
+
+    sum = 0;
+
+    // forを使用しない書き方
+    let mut iterator = (&range).into_iter();
+    while let Some(n) = iterator.next() {
+        sum = sum + n;
+    }
+    println!("{}", sum);
+}
+```
+
+### from_fn
+
+クロージャを使用して値を生成することが出来る。クロージャは `Option<T>` を返す必要がある。
+
+```rust
+use std::iter::from_fn;
+
+fn main() {
+    const MAX_COUNT: usize = 10;
+    let mut count = 0;
+    let collection: Vec<u32> = from_fn(|| {
+        count = count + 1;
+        if count <= MAX_COUNT {
+            Some(10)
+        } else {
+            None
+        }
+    }).collect();
+    println!("{:?}", collection); // [10, 10, 10, 10, 10, 10, 10, 10, 10, 10]
+
+    // takeを使用した書き方
+    let collection: Vec<u32> = from_fn(|| { Some(10) } )
+        .take(MAX_COUNT)
+        .collect();
+    println!("{:?}", collection); // [10, 10, 10, 10, 10, 10, 10, 10, 10, 10]
+}
+```
+
+### successors
+
+successors は直前の値を使用してコレクションを作成できる。from_fnとの違いは引数として初期値を受け取ること、直前のアイテムを受け取るためにクロージャに引数が追加されることになる。
+
+```rust
+use std::iter::successors;
+
+fn main() {
+    const MAX_COUNT: usize = 10;
+    let collection: Vec<u32> = successors(Some(0), |&n| {
+            Some(n + 1)
+        })
+        .take(MAX_COUNT)
+        .collect();
+    println!("{:?}", collection); // [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+}
+```
+
+### アダプタ
+
+イテレータを消費して別のイテレータを作る。アダプタはイテレータを作るだけでイテレータのnext()が呼び出されるまで値は消費されない。
+
+```rust
+use std::iter::successors;
+
+#[derive(Debug, Default)]
+struct Hoge {
+    value: u32,
+}
+
+impl Hoge {
+    fn new(value: u32) -> Self { Hoge { value } }
+    fn print(&self) { println!("{}", self.value) }
+}
+
+fn main() {
+    let vec: Vec<Hoge> = successors(Some(Hoge::default()), |prev| Some(Hoge::new(prev.value + 1)))
+        .take(10).collect();
+
+    let iter = vec.iter();
+    // Hoge型のvalueのイテレータを作り、偶数のみのイテレータを作成
+    let iter = iter.map(|hoge| {
+            hoge.print();
+            hoge.value
+        })
+        .filter(|value| value % 2 == 0); // この段階ではイテレータの作成だけなのでmap等の中身は実行されない。
+
+    println!("adapter created");
+
+    let vec: Vec<u32> = iter.collect(); // この段階でmap等が動き、0~9まで順番に出力される。
+
+    println!("{:?}", vec); // [0, 2, 4, 6, 8] // 最終的に偶数のみのVec<u32>になる
+}
+```
+
+### filter_map
+
+filter_mapはfilterとmapを組み合わせたもの。クロージャの戻り値は `Option<T>` 型になる。
+
+```rust
+use std::iter::successors;
+
+#[derive(Debug, Default)]
+struct Hoge {
+    value: u32,
+}
+
+impl Hoge {
+    fn new(value: u32) -> Self { Hoge { value } }
+    fn even_number(&self) -> Option<u32> { 
+        if self.value % 2 == 0 {
+            Some(self.value)
+        } else {
+            None
+        }
+    }
+}
+
+fn main() {
+    let vec: Vec<Hoge> = successors(Some(Hoge::default()), |prev| Some(Hoge::new(prev.value + 1)))
+        .take(10).collect();
+
+    let even_numbers: Vec<u32> = vec.iter()
+        .filter_map(|hoge| hoge.even_number())
+        .collect();
+    println!("{:?}", even_numbers); // [0, 2, 4, 6, 8]
+
+    // filter_mapを使用しない場合
+    let even_numbers: Vec<u32> = vec.iter()
+        .map(|hoge| hoge.even_number())
+        .filter(|number| number.is_some())
+        .map(|number| number.unwrap())
+        .collect();
+    println!("{:?}", even_numbers); // [0, 2, 4, 6, 8]
+}
+```
+
+### flat_map
+
+flat_mapは任意個数のアイテム列を結合した列を作成する。
+
+```rust
+use std::iter::successors;
+
+fn main() {
+    // 3つずつ値を持つ列の列を作成
+    let vecs: Vec<Vec<u32>> = (0..3).into_iter()
+        .map(|n| successors(Some(n * 3), |n| Some(n + 1)).take(3).collect())
+        .collect();
+
+    println!("{:?}", vecs); // [[0, 1, 2], [3, 4, 5], [6, 7, 8]]
+    let vec: Vec<u32> = vecs.into_iter()
+        .flat_map(|vec| vec)    // 列を返すクロージャ
+        .collect();
+    println!("{:?}", vec); // [0, 1, 2, 3, 4, 5, 6, 7, 8]
+}
+```
+
+### flatten
+
+flattenはイテレータをつなぎ合わせる。
+
+```rust
+use std::iter::successors;
+
+fn main() {
+    let vecs = (0..3).into_iter()
+        .map(|n| successors(Some(n * 3), |n| Some(n + 1)).take(3));
+
+    let vec: Vec<u32> = vecs.into_iter()
+        .flatten()
+        .collect();
+    println!("{:?}", vec); // [0, 1, 2, 3, 4, 5, 6, 7, 8]
+}
+```
+
+### peekable
+
+イテレータを進めず値を取り出すことが出来る。
+
+```rust
+fn main() {
+    let vec: Vec<_> = (0..=9).into_iter().collect();
+    
+    let mut vec = vec.into_iter().peekable();
+
+    // ここでpeekを読んでもリソースを消費しない
+    vec.peek();
+    loop {
+        match vec.peek() {
+            Some(n) => println!("{}", n),
+            _ => break
+        }
+
+        vec.next();
+    }
+}
+```
+
+### fuse
+
+Iteratorは基本的にNoneが出たら次のNoneを返す。だがrustの規格では未定義のためNone以外が帰ってくるものもあり得る。そんな時にfuseを使用すれば一度Noneを出したらそれ以降もNoneを返し続ける。
+
+```rust
+struct Hoge {
+    vec: Vec<u32>,
+    index: usize,
+}
+
+impl Iterator for Hoge {
+    type Item = u32;
+    // 奇数だった場合 None を返す
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.vec.len() <= self.index {
+            None
+        } else if self.index % 2 == 1 {
+            self.index = self.index + 1;
+            None
+        } else {
+            let ret = self.vec[self.index];
+            self.index = self.index + 1;
+            Some(ret)
+        }
+    }
+}
+
+fn main() {
+    let hoge = Hoge { vec: (0..=9).into_iter().collect(), index: 0 };
+
+    let mut iter = hoge.into_iter();
+    // 0から3まで回す
+    for _ in 0..4 {
+        println!("{:?}", iter.next()); // 奇数の場合Noneになる
+    }
+    println!("to fuse");
+    // 4から9まで回す
+    let mut iter = iter.fuse();
+    for _ in 4..10 {
+        println!("{:?}", iter.next()); // // 一度奇数が出てNoneになった場合それ以降もNoneになる
+    }
+}
+```
+
+アダプタ関係の種類が多いため実際に使用しながら覚える。
